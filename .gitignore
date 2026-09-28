@@ -216,3 +216,25 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project data (never commit raw or processed data)
+data/
+*.parquet
+*.csv
+!tests/fixtures/*.csv
+
+# Secrets and local config
+.env
+.databrickscfg
+
+# Notebooks and experiment tracking
+.ipynb_checkpoints/
+mlruns/
+
+# Power BI (keep the .pbix out; publish screenshots in docs/ instead)
+*.pbix
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
