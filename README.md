@@ -24,8 +24,8 @@ Sources (BCB and IBGE APIs) -> Python extraction -> Databricks
 
 | Source | Data | Access |
 |---|---|---|
-| Banco Central do Brasil (SGS) | IPCA, Selic, IBC-Br | Public API, no key |
-| IBGE (SIDRA) | Industrial production (PIM-PF) | Public API, no key |
+| Banco Central do Brasil (SGS) | IPCA, Selic, IBC-Br, IBC-Br Industry (target) | Public API, no key |
+| IBGE (SIDRA) | Industrial production (PIM-PF), planned as a second source | Public API, no key |
 
 ## Tech stack
 
