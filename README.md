@@ -17,7 +17,7 @@ validation and pick the one that best supports planning decisions.
 
 _Diagram coming soon (docs/architecture.png)._
 
-Sources (BCB and IBGE APIs) -> Python extraction -> Databricks
+Sources (BCB SGS API; IBGE planned) -> Python extraction -> Databricks
 (bronze / silver / gold) -> forecasting models (MLflow) -> Power BI
 
 ## Data sources
@@ -26,6 +26,17 @@ Sources (BCB and IBGE APIs) -> Python extraction -> Databricks
 |---|---|---|
 | Banco Central do Brasil (SGS) | IPCA, Selic, IBC-Br, IBC-Br Industry (target) | Public API, no key |
 | IBGE (SIDRA) | Industrial production (PIM-PF), planned as a second source | Public API, no key |
+
+## Data layers
+
+| Layer | Table | Description |
+|---|---|---|
+| Bronze | `bronze_bcb_sgs` | Raw API data as ingested (text values), with source file |
+| Silver | `silver_bcb_sgs` | Typed columns, deduplicated, current month flagged |
+| Gold | `gold_economic_monthly` | One row per month, one column per series, aligned to the target's last month |
+
+Target variable: `ibc_br_industry` (IBC-Br Industry index, monthly, 2003 onward).
+The last, still-incomplete month of each series is excluded from the gold layer.
 
 ## Tech stack
 
@@ -46,8 +57,8 @@ _Setup instructions will be added as each phase is completed._
 ## Roadmap
 
 - [x] Phase 0: repository and project structure
-- [ ] Phase 1: data extraction from BCB and IBGE APIs
-- [ ] Phase 2: Databricks bronze / silver / gold layers
+- [x] Phase 1: data extraction from the BCB SGS API
+- [x] Phase 2: Databricks bronze / silver / gold layers
 - [ ] Phase 3: data quality checks
 - [ ] Phase 4: forecasting models and experiment tracking
 - [ ] Phase 5: model monitoring
