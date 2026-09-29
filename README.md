@@ -45,9 +45,9 @@ scikit-learn / statsmodels, Power BI.
 
 ## Project structure
 
-    src/         extraction and transformation code
-    notebooks/   Databricks and exploration notebooks
-    tests/       data quality and unit tests
+    src/         extraction code
+    notebooks/   Databricks notebooks: pipeline layers and data quality tests
+    tests/       unit tests for the extraction code (planned)
     docs/        diagrams and model card
 
 ## Getting started
@@ -59,7 +59,7 @@ _Setup instructions will be added as each phase is completed._
 - [x] Phase 0: repository and project structure
 - [x] Phase 1: data extraction from the BCB SGS API
 - [x] Phase 2: Databricks bronze / silver / gold layers
-- [ ] Phase 3: data quality checks
+- [x] Phase 3: data quality checks
 - [ ] Phase 4: forecasting models and experiment tracking
 - [ ] Phase 5: model monitoring
 - [ ] Phase 6: Power BI dashboard
