@@ -1,3 +1,5 @@
+# %pip install statsmodels
+
 # Calendar-aware regression models vs. the seasonal naive baseline, tracked with MLflow.
 # Run in a Databricks notebook (uses spark and display).
 import mlflow
@@ -138,3 +140,110 @@ for h in HORIZONS:
         lo, hi = block_ci(d)
         print(f"h={h} | {label} (n={len(d)}): model better in {(d > 0).mean():.0%} of months; "
               f"mean MAE gain {d.mean():.2f} (95% block-bootstrap CI {lo:.2f} to {hi:.2f})")
+
+# Extra models: SARIMA and gradient boosting, compared against the seasonal naive baseline.
+import warnings
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from sklearn.ensemble import HistGradientBoostingRegressor
+
+
+def sarima_forecasts(h):
+    """Seasonal ARIMA(1,1,1)(0,1,1,12), fixed in advance and refit at every forecast origin."""
+    out = []
+    for t in range(n - TEST_MONTHS, n):
+        o = t - h
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            res = SARIMAX(y.iloc[: o + 1], order=(1, 1, 1), seasonal_order=(0, 1, 1, 12)).fit(disp=False)
+            out.append((t, float(res.forecast(steps=h).iloc[-1])))
+    return out
+
+
+def gbm_forecasts(h):
+    """Gradient boosting on the same features as the ridge (calendar + recent growth)."""
+    X = make_x(h, use_ipca=False)
+    out = []
+    for t in range(n - TEST_MONTHS, n):
+        o = t - h
+        Xtr, ytr = X.iloc[: o + 1], g.iloc[: o + 1]
+        ok = Xtr.notna().all(axis=1) & ytr.notna()
+        model = HistGradientBoostingRegressor(
+            max_depth=3, learning_rate=0.05, max_iter=200, min_samples_leaf=20, random_state=0
+        ).fit(Xtr[ok], ytr[ok])
+        out.append((t, y.iloc[t - 12] * np.exp(model.predict(X.iloc[[t]])[0])))
+    return out
+
+
+all_models = {
+    "seasonal_naive": seasonal_naive_forecasts,
+    "ridge_calendar": lambda h: ridge_forecasts(h, use_ipca=False),
+    "ridge_calendar_ipca": lambda h: ridge_forecasts(h, use_ipca=True),
+    "sarima_111_011_12": sarima_forecasts,
+    "gbm_calendar": gbm_forecasts,
+}
+NEW_MODELS = {"sarima_111_011_12", "gbm_calendar"}
+
+# Compute every forecast once and reuse it below
+forecasts = {(name, h): fn(h) for name, fn in all_models.items() for h in HORIZONS}
+
+# Log only the new models to MLflow (the others were logged above)
+for (name, h), rows in forecasts.items():
+    if name in NEW_MODELS:
+        with mlflow.start_run(run_name=f"{name}_h{h}_w{TEST_MONTHS}"):
+            mlflow.log_params({"model": name, "horizon": h, "test_months": TEST_MONTHS})
+            mlflow.log_metrics(summarize(rows))
+
+table = [{"model": name, "horizon": h, **summarize(rows)} for (name, h), rows in forecasts.items()]
+display(pd.DataFrame(table).round(2).sort_values(["horizon", "MAE"]))
+
+
+# Paired comparison of every model against the seasonal naive baseline
+def abs_errors_from(rows):
+    idx = [r[0] for r in rows]
+    fcst = np.array([r[1] for r in rows])
+    return y.index[idx], np.abs(fcst - y.iloc[idx].values)
+
+
+for h in HORIZONS:
+    dates, e_base = abs_errors_from(forecasts[("seasonal_naive", h)])
+    no2020 = ~((dates >= "2020-03-01") & (dates <= "2020-12-01"))
+    for name in all_models:
+        if name == "seasonal_naive":
+            continue
+        _, e_model = abs_errors_from(forecasts[(name, h)])
+        diff = e_base - e_model  # positive = the model is better
+        for label, d in [("all", diff), ("ex-2020", diff[no2020])]:
+            lo, hi = block_ci(d)
+            print(f"h={h} | {name:20s} | {label:7s}: better in {(d > 0).mean():.0%} of months, "
+                  f"MAE gain {d.mean():+.2f} (95% CI {lo:+.2f} to {hi:+.2f})")
+
+# Exploratory: equal-weight average of SARIMA and the calendar ridge (chosen after seeing the results).
+ensemble = {}
+for h in HORIZONS:
+    a = forecasts[("sarima_111_011_12", h)]
+    b = forecasts[("ridge_calendar", h)]
+    ensemble[h] = [(t, (fa + fb) / 2) for (t, fa), (_, fb) in zip(a, b)]
+
+for h in HORIZONS:
+    rows = ensemble[h]
+    m = summarize(rows)
+    with mlflow.start_run(run_name=f"ensemble_sarima_ridge_h{h}_w{TEST_MONTHS}"):
+        mlflow.log_params({"model": "ensemble_sarima_ridge", "horizon": h, "test_months": TEST_MONTHS})
+        mlflow.log_metrics(m)
+
+    dates, e_base = abs_errors_from(forecasts[("seasonal_naive", h)])
+    _, e_ens = abs_errors_from(rows)
+    diff = e_base - e_ens
+    no2020 = ~((dates >= "2020-03-01") & (dates <= "2020-12-01"))
+    print(f"h={h} | ensemble: MAE {m['MAE']:.2f}, WAPE {m['WAPE_pct']:.2f}%, bias {m['bias']:+.2f}")
+    for label, d in [("all", diff), ("ex-2020", diff[no2020])]:
+        lo, hi = block_ci(d)
+        print(f"      {label:7s}: better in {(d > 0).mean():.0%} of months, "
+              f"MAE gain {d.mean():+.2f} (95% CI {lo:+.2f} to {hi:+.2f})")
+
+# Stability check: ensemble vs. baseline in each half of the test window (horizon 1).
+dates, e_base = abs_errors_from(forecasts[("seasonal_naive", 1)])
+_, e_ens = abs_errors_from(ensemble[1])
+half = len(dates) // 2
+for label, sl in [("first 60 months", slice(0, half)), ("last 60 months", slice(half, None))]:
+    print(f"{label}: baseline MAE {e_base[sl].mean():.2f} | ensemble MAE {e_ens[sl].mean():.2f}")
